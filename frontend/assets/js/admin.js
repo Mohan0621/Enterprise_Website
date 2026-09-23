@@ -773,9 +773,9 @@
               <div class="admin-detail-group">
                 <label class="admin-detail-label">Status</label>
                 <select id="orderStatusSelect" style="width:100%; padding:8px; border:1px solid var(--color-border);">
-                  <option value="PENDING" ${order.status === 'PENDING' ? 'selected' : ''}>Pending</option>
+                  <option value="PROCESSING" ${order.status === 'PROCESSING' ? 'selected' : ''}>Processing</option>
                   <option value="CONFIRMED" ${order.status === 'CONFIRMED' ? 'selected' : ''}>Confirmed</option>
-                  <option value="SHIPPED" ${order.status === 'SHIPPED' ? 'selected' : ''}>Shipped</option>
+                  <option value="OUT_FOR_DELIVERY" ${order.status === 'OUT_FOR_DELIVERY' ? 'selected' : ''}>Out for Delivery</option>
                   <option value="DELIVERED" ${order.status === 'DELIVERED' ? 'selected' : ''}>Delivered</option>
                   <option value="CANCELLED" ${order.status === 'CANCELLED' ? 'selected' : ''}>Cancelled</option>
                 </select>
@@ -794,6 +794,7 @@
               .then(() => {
                 showAdminToast('Order status updated');
                 closeOrderDrawer();
+                renderOrders();
               })
               .catch(() => showAdminToast('Failed to update order status', 'error'));
           });
@@ -821,6 +822,177 @@
   });
 
   /* =========================================================================
+     PRODUCT MANAGEMENT VIEW CONTROLLER
+     ========================================================================= */
+
+  function renderProducts() {
+    const tbody = document.getElementById('productsTableBody');
+    const emptyState = document.getElementById('productsEmptyState');
+    const searchInput = document.getElementById('productSearchInput');
+    const categoryFilter = document.getElementById('productCategoryFilter');
+
+    if (!tbody) return;
+
+    const query = (searchInput?.value || '').trim();
+    const category = categoryFilter?.value || '';
+
+    showAdminToast('Loading products...', 'info');
+
+    API.getProducts({ search: query, category: category || undefined })
+      .then(res => {
+        if (!res.data || res.data.length === 0) {
+          tbody.innerHTML = '';
+          if (emptyState) emptyState.style.display = 'flex';
+          return;
+        }
+
+        if (emptyState) emptyState.style.display = 'none';
+
+        tbody.innerHTML = res.data.map(p => `
+          <tr>
+            <td>
+              <div style="font-weight:var(--font-semibold);">${p.name}</div>
+              <div style="font-size:var(--text-xs); color:var(--color-text-muted);">${p.category?.name || 'Uncategorized'}</div>
+            </td>
+            <td>${formatRupees(p.price)}</td>
+            <td>
+              <span style="font-weight:var(--font-bold); color:${p.stock === 0 ? 'var(--color-error-600)' : '#059669'};">
+                ${p.stock} units
+              </span>
+            </td>
+            <td>
+              <span class="badge ${p.availability === 'AVAILABLE' ? 'badge--success' : ''}" style="${p.availability !== 'AVAILABLE' ? 'background:#f4f4f5; color:#71717a;' : ''}">
+                ${p.availability === 'AVAILABLE' ? 'Available' : 'Out of Stock'}
+              </span>
+            </td>
+            <td style="font-size:var(--text-xs); color:var(--color-text-muted);">${new Date(p.createdAt).toLocaleDateString()}</td>
+            <td>
+              <button type="button" class="admin-btn-action" data-edit-product="${p.id}">Edit</button>
+              <button type="button" class="admin-btn-action admin-btn-action--danger" data-delete-product="${p.id}">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+
+        // Attach listeners
+        tbody.querySelectorAll('[data-edit-product]').forEach(btn => {
+          btn.addEventListener('click', () => editProduct(btn.dataset.editProduct));
+        });
+
+        tbody.querySelectorAll('[data-delete-product]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to delete this product?')) {
+              API.deleteProduct(btn.dataset.deleteProduct)
+                .then(() => {
+                  showAdminToast('Product deleted');
+                  renderProducts();
+                })
+                .catch(() => showAdminToast('Failed to delete product', 'error'));
+            }
+          });
+        });
+      })
+      .catch(err => {
+        showAdminToast('Failed to load products', 'error');
+        tbody.innerHTML = '';
+      });
+  }
+
+  function editProduct(productId) {
+    showAdminToast('Product editing coming soon', 'warning');
+  }
+
+  // Product search and filter
+  const productSearchInput = document.getElementById('productSearchInput');
+  const productCategoryFilter = document.getElementById('productCategoryFilter');
+
+  if (productSearchInput || productCategoryFilter) {
+    [productSearchInput, productCategoryFilter].forEach(el => {
+      if (el) {
+        el.addEventListener('change', renderProducts);
+        el.addEventListener('keyup', () => {
+          clearTimeout(window.productSearchTimeout);
+          window.productSearchTimeout = setTimeout(renderProducts, 300);
+        });
+      }
+    });
+  }
+
+  /* =========================================================================
+     ORDER MANAGEMENT VIEW CONTROLLER
+     ========================================================================= */
+
+  function renderOrders() {
+    const tbody = document.getElementById('ordersTableBody');
+    const emptyState = document.getElementById('ordersEmptyState');
+    const statusFilter = document.getElementById('orderStatusFilter');
+    const searchInput = document.getElementById('orderSearchInput');
+
+    if (!tbody) return;
+
+    const query = (searchInput?.value || '').trim();
+    const status = statusFilter?.value || '';
+
+    showAdminToast('Loading orders...', 'info');
+
+    API.getOrders({ search: query, status: status || undefined })
+      .then(res => {
+        if (!res.data || res.data.length === 0) {
+          tbody.innerHTML = '';
+          if (emptyState) emptyState.style.display = 'flex';
+          return;
+        }
+
+        if (emptyState) emptyState.style.display = 'none';
+
+        tbody.innerHTML = res.data.map(o => `
+          <tr>
+            <td><strong style="font-family:var(--font-mono); color:var(--color-primary-700);">${o.shortId}</strong></td>
+            <td>
+              <div style="font-weight:var(--font-semibold);">${o.user?.username || 'Unknown'}</div>
+              <div style="font-size:var(--text-xs); color:var(--color-text-muted);">${o.user?.email || 'N/A'}</div>
+            </td>
+            <td><strong>${formatRupees(o.totalAmount)}</strong></td>
+            <td>
+              <span class="order-status order-status--${o.status.toLowerCase()}">
+                <span class="order-status__dot"></span>
+                ${capitalize(o.status.replace(/_/g, ' '))}
+              </span>
+            </td>
+            <td style="font-size:var(--text-xs); color:var(--color-text-muted);">${new Date(o.createdAt).toLocaleDateString()}</td>
+            <td>
+              <button type="button" class="admin-btn-action" data-view-order="${o.id}">View</button>
+            </td>
+          </tr>
+        `).join('');
+
+        // Attach listeners
+        tbody.querySelectorAll('[data-view-order]').forEach(btn => {
+          btn.addEventListener('click', () => openOrderDrawer(btn.dataset.viewOrder));
+        });
+      })
+      .catch(err => {
+        showAdminToast('Failed to load orders', 'error');
+        tbody.innerHTML = '';
+      });
+  }
+
+  // Order search and filter
+  const orderSearchInput = document.getElementById('orderSearchInput');
+  const orderStatusFilter = document.getElementById('orderStatusFilter');
+
+  if (orderSearchInput || orderStatusFilter) {
+    [orderSearchInput, orderStatusFilter].forEach(el => {
+      if (el) {
+        el.addEventListener('change', renderOrders);
+        el.addEventListener('keyup', () => {
+          clearTimeout(window.orderSearchTimeout);
+          window.orderSearchTimeout = setTimeout(renderOrders, 300);
+        });
+      }
+    });
+  }
+
+  /* =========================================================================
      PAGE INITIALIZATION
      ========================================================================= */
 
@@ -833,6 +1005,10 @@
       initDashboard();
     } else if (path.includes('/admin/banners')) {
       renderBanners();
+    } else if (path.includes('/admin/products')) {
+      renderProducts();
+    } else if (path.includes('/admin/orders')) {
+      renderOrders();
     }
   });
 
