@@ -23,7 +23,7 @@ export class AdminProductService {
       }
 
       // Filter by category
-      if (filters.category) {
+      if (filters.category && filters.category !== 'all') {
         where.category = {
           name: { contains: filters.category, mode: 'insensitive' }
         };

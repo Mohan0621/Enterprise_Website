@@ -127,6 +127,52 @@
         method: 'PATCH',
         body: JSON.stringify({ status })
       });
+    },
+
+    // Attributes
+    async getAttributes() {
+      return this.fetch('/attributes');
+    },
+    async createAttribute(attributeData) {
+      return this.fetch('/attributes', {
+        method: 'POST',
+        body: JSON.stringify(attributeData)
+      });
+    },
+    async getAttributeValues(attributeId) {
+      return this.fetch(`/attributes/${attributeId}/values`);
+    },
+    async createAttributeValue(attributeId, valueData) {
+      return this.fetch(`/attributes/${attributeId}/values`, {
+        method: 'POST',
+        body: JSON.stringify(valueData)
+      });
+    },
+
+    // Variants
+    async getVariants(filters = {}) {
+      const params = new URLSearchParams();
+      if (filters.productId) params.append('productId', filters.productId);
+      if (filters.availability) params.append('availability', filters.availability);
+      if (filters.page) params.append('page', filters.page);
+      if (filters.limit) params.append('limit', filters.limit);
+      return this.fetch(`/variants?${params}`);
+    },
+    async createVariant(variantData) {
+      return this.fetch('/variants', {
+        method: 'POST',
+        body: JSON.stringify(variantData)
+      });
+    },
+    async toggleVariantAvailability(variantId) {
+      return this.fetch(`/variants/${variantId}/availability`, {
+        method: 'PATCH'
+      });
+    },
+    async deleteVariant(variantId) {
+      return this.fetch(`/variants/${variantId}`, {
+        method: 'DELETE'
+      });
     }
   };
 
@@ -831,17 +877,38 @@
     const emptyState = document.getElementById('productsEmptyState');
     const searchInput = document.getElementById('productSearchInput');
     const categoryFilter = document.getElementById('productCategoryFilter');
+    const stockFilter = document.getElementById('productStockFilter');
+    const countDisplay = document.getElementById('productsCountDisplay');
 
     if (!tbody) return;
 
     const query = (searchInput?.value || '').trim();
     const category = categoryFilter?.value || '';
+    const stockVal = stockFilter?.value || 'all';
 
     showAdminToast('Loading products...', 'info');
 
-    API.getProducts({ search: query, category: category || undefined })
+    API.getProducts({ 
+      search: query || undefined, 
+      category: (category && category !== 'all') ? category : undefined 
+    })
       .then(res => {
-        if (!res.data || res.data.length === 0) {
+        let products = res.data || [];
+
+        // Apply client-side stock status filter if selected
+        if (stockVal === 'In Stock') {
+          products = products.filter(p => p.stock > 0);
+        } else if (stockVal === 'Low Stock') {
+          products = products.filter(p => p.stock > 0 && p.stock < 5);
+        } else if (stockVal === 'Out of Stock') {
+          products = products.filter(p => p.stock === 0);
+        }
+
+        if (countDisplay) {
+          countDisplay.textContent = products.length;
+        }
+
+        if (products.length === 0) {
           tbody.innerHTML = '';
           if (emptyState) emptyState.style.display = 'flex';
           return;
@@ -849,24 +916,35 @@
 
         if (emptyState) emptyState.style.display = 'none';
 
-        tbody.innerHTML = res.data.map(p => `
+        tbody.innerHTML = products.map(p => `
           <tr>
             <td>
               <div style="font-weight:var(--font-semibold);">${p.name}</div>
-              <div style="font-size:var(--text-xs); color:var(--color-text-muted);">${p.category?.name || 'Uncategorized'}</div>
+              <div style="font-size:var(--text-xs); color:var(--color-text-muted);">${p.brand || ''}</div>
             </td>
-            <td>${formatRupees(p.price)}</td>
+            <td>
+              <span style="font-size:var(--text-xs); background:var(--color-surface-sunken); padding:2px 8px; border-radius:var(--radius-sm);">
+                ${p.category?.name || 'Uncategorized'}
+              </span>
+            </td>
+            <td style="font-weight:var(--font-medium);">${formatRupees(p.price)}</td>
             <td>
               <span style="font-weight:var(--font-bold); color:${p.stock === 0 ? 'var(--color-error-600)' : '#059669'};">
                 ${p.stock} units
               </span>
             </td>
             <td>
-              <span class="badge ${p.availability === 'AVAILABLE' ? 'badge--success' : ''}" style="${p.availability !== 'AVAILABLE' ? 'background:#f4f4f5; color:#71717a;' : ''}">
-                ${p.availability === 'AVAILABLE' ? 'Available' : 'Out of Stock'}
-              </span>
+              ${p.stock === 0 
+                ? '<span class="badge" style="background:#fee2e2; color:#b91c1c;">Out of Stock</span>' 
+                : (p.stock < 5 
+                    ? '<span class="badge" style="background:#fef3c7; color:#b45309;">Low Stock</span>' 
+                    : '<span class="badge badge--success">In Stock</span>')}
             </td>
-            <td style="font-size:var(--text-xs); color:var(--color-text-muted);">${new Date(p.createdAt).toLocaleDateString()}</td>
+            <td>
+              <button type="button" class="badge ${p.availability === 'AVAILABLE' ? 'badge--success' : ''}" style="${p.availability !== 'AVAILABLE' ? 'background:#f4f4f5; color:#71717a;' : ''} border:none; cursor:pointer;" data-toggle-product="${p.id}" title="Click to toggle availability">
+                ${p.availability === 'AVAILABLE' ? 'Available' : 'Unavailable'}
+              </button>
+            </td>
             <td>
               <button type="button" class="admin-btn-action" data-edit-product="${p.id}">Edit</button>
               <button type="button" class="admin-btn-action admin-btn-action--danger" data-delete-product="${p.id}">Delete</button>
@@ -875,6 +953,17 @@
         `).join('');
 
         // Attach listeners
+        tbody.querySelectorAll('[data-toggle-product]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            API.toggleProductVisibility(btn.dataset.toggleProduct)
+              .then(res => {
+                showAdminToast(`Product marked as ${res.data?.availability || 'updated'}`);
+                renderProducts();
+              })
+              .catch(() => showAdminToast('Failed to toggle product visibility', 'error'));
+          });
+        });
+
         tbody.querySelectorAll('[data-edit-product]').forEach(btn => {
           btn.addEventListener('click', () => editProduct(btn.dataset.editProduct));
         });
@@ -898,23 +987,161 @@
       });
   }
 
+  let currentProductImage = '';
+
+  function setProductImage(url) {
+    currentProductImage = url || '';
+    const previewBox = document.getElementById('productImgPreviewBox');
+    const previewImg = document.getElementById('productImgPreviewElement');
+    const urlInput = document.getElementById('productImageUrlInput');
+
+    if (currentProductImage) {
+      if (previewImg) previewImg.src = currentProductImage;
+      if (previewBox) previewBox.style.display = 'block';
+      if (urlInput && !urlInput.value) urlInput.value = currentProductImage;
+    } else {
+      if (previewImg) previewImg.src = '';
+      if (previewBox) previewBox.style.display = 'none';
+      if (urlInput) urlInput.value = '';
+      const fileInput = document.getElementById('productFileInput');
+      if (fileInput) fileInput.value = '';
+    }
+  }
+
+  function setupProductImageControls() {
+    const fileInput = document.getElementById('productFileInput');
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            setProductImage(ev.target.result);
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
+
+    const applyUrlBtn = document.getElementById('productApplyUrlBtn');
+    const urlInput = document.getElementById('productImageUrlInput');
+    if (applyUrlBtn && urlInput) {
+      applyUrlBtn.addEventListener('click', () => {
+        const val = urlInput.value.trim();
+        if (val) setProductImage(val);
+      });
+      urlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const val = urlInput.value.trim();
+          if (val) setProductImage(val);
+        }
+      });
+    }
+
+    const clearBtn = document.getElementById('productImgClearBtn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        setProductImage('');
+      });
+    }
+  }
+
+  function resetProductForm() {
+    const form = document.getElementById('productForm');
+    if (form) form.reset();
+    setProductImage('');
+    delete form.dataset.productId;
+    document.getElementById('productName')?.focus();
+  }
+
   function editProduct(productId) {
-    showAdminToast('Product editing coming soon', 'warning');
+    API.getProducts()
+      .then(res => {
+        const product = res.data?.find(p => p.id === productId);
+        if (!product) {
+          showAdminToast('Product not found', 'error');
+          return;
+        }
+
+        const form = document.getElementById('productForm');
+        if (form) {
+          document.getElementById('productName').value = product.name;
+          document.getElementById('productDescription').value = product.description;
+          document.getElementById('productBrand').value = product.brand;
+          document.getElementById('productPrice').value = product.price;
+          document.getElementById('productSlug').value = product.slug;
+          document.getElementById('productCategory').value = product.categoryId || '';
+          form.dataset.productId = productId;
+        }
+        openModal('productModal');
+      })
+      .catch(err => showAdminToast('Failed to load product details', 'error'));
+  }
+
+  const productForm = document.getElementById('productForm');
+  if (productForm) {
+    productForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const productId = productForm.dataset.productId;
+      const productData = {
+        name: document.getElementById('productName')?.value,
+        description: document.getElementById('productDescription')?.value,
+        brand: document.getElementById('productBrand')?.value,
+        price: parseFloat(document.getElementById('productPrice')?.value || 0),
+        slug: document.getElementById('productSlug')?.value,
+        categoryId: document.getElementById('productCategory')?.value
+      };
+
+      if (!productData.name || !productData.description || !productData.brand || !productData.price || !productData.slug) {
+        showAdminToast('Please fill all required fields', 'warning');
+        return;
+      }
+
+      try {
+        if (productId) {
+          await API.updateProduct(productId, productData);
+          showAdminToast('Product updated successfully');
+        } else {
+          await API.createProduct(productData);
+          showAdminToast('Product created successfully');
+        }
+        closeModal('productModal');
+        resetProductForm();
+        renderProducts();
+      } catch (err) {
+        showAdminToast('Failed to save product', 'error');
+      }
+    });
   }
 
   // Product search and filter
   const productSearchInput = document.getElementById('productSearchInput');
   const productCategoryFilter = document.getElementById('productCategoryFilter');
+  const productStockFilter = document.getElementById('productStockFilter');
+  const resetProductFiltersBtn = document.getElementById('resetProductFiltersBtn');
 
-  if (productSearchInput || productCategoryFilter) {
-    [productSearchInput, productCategoryFilter].forEach(el => {
-      if (el) {
-        el.addEventListener('change', renderProducts);
-        el.addEventListener('keyup', () => {
-          clearTimeout(window.productSearchTimeout);
-          window.productSearchTimeout = setTimeout(renderProducts, 300);
-        });
-      }
+  if (productSearchInput || productCategoryFilter || productStockFilter) {
+    [productCategoryFilter, productStockFilter].forEach(el => {
+      if (el) el.addEventListener('change', renderProducts);
+    });
+    if (productSearchInput) {
+      productSearchInput.addEventListener('change', renderProducts);
+      productSearchInput.addEventListener('keyup', () => {
+        clearTimeout(window.productSearchTimeout);
+        window.productSearchTimeout = setTimeout(renderProducts, 300);
+      });
+      productSearchInput.addEventListener('search', renderProducts);
+    }
+  }
+
+  if (resetProductFiltersBtn) {
+    resetProductFiltersBtn.addEventListener('click', () => {
+      if (productSearchInput) productSearchInput.value = '';
+      if (productCategoryFilter) productCategoryFilter.value = 'all';
+      if (productStockFilter) productStockFilter.value = 'all';
+      renderProducts();
     });
   }
 
@@ -999,6 +1226,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     setupBannerImageControls();
+    setupProductImageControls();
     
     // Initialize page based on current path
     const path = window.location.pathname;
