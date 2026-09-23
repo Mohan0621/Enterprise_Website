@@ -74,7 +74,6 @@ model Product {
   description     String
   brand           String
   price           Decimal
-  stock           Int @default(0)
   availability    Status @default(AVAILABLE)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
