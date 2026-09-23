@@ -15,6 +15,7 @@
     async fetch(endpoint, options = {}) {
       try {
         const response = await fetch(`/api/admin${endpoint}`, {
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             ...options.headers
