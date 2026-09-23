@@ -857,6 +857,11 @@
             </td>
             <td>${formatRupees(p.price)}</td>
             <td>
+              <span style="font-weight:var(--font-bold); color:${p.stock === 0 ? 'var(--color-error-600)' : '#059669'};">
+                ${p.stock} units
+              </span>
+            </td>
+            <td>
               <span class="badge ${p.availability === 'AVAILABLE' ? 'badge--success' : ''}" style="${p.availability !== 'AVAILABLE' ? 'background:#f4f4f5; color:#71717a;' : ''}">
                 ${p.availability === 'AVAILABLE' ? 'Available' : 'Out of Stock'}
               </span>
